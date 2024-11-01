@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Overlay System</title>
+    <title>Overlay Widget</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <style>
         /* Shared styles */
@@ -43,6 +43,23 @@
             margin-bottom: 10px;
         }
 
+        .url-display {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+
+        .code-block {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+
         button {
             padding: 10px 20px;
             background: #9147ff;
@@ -57,14 +74,20 @@
             background: #7527e0;
         }
 
-        #configUrl {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            word-break: break-all;
-            background: #f0f0f0;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-connected {
+            background-color: #00ff00;
+        }
+
+        .status-disconnected {
+            background-color: #ff0000;
         }
 
         /* Overlay styles */
@@ -99,19 +122,97 @@
             color: white;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
+
+        #wsStatus {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 12px;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <script>
-        // Check if this is the config page or overlay
         const isConfig = window.location.hash === '#config';
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
 
-        // Generate a random user ID if needed
+        // WebSocket Connection Handler
+        function connectWebSocket(port) {
+            if (ws) {
+                ws.close();
+            }
+
+            ws = new WebSocket(`ws://127.0.0.1:${port}`);
+
+            ws.onopen = () => {
+                console.log('Connected to Streamer.bot');
+                updateConnectionStatus(true);
+                reconnectAttempts = 0;
+            };
+
+            ws.onclose = () => {
+                console.log('Disconnected from Streamer.bot');
+                updateConnectionStatus(false);
+                
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(() => connectWebSocket(port), 5000);
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('wsStatus');
+            if (status) {
+                status.innerHTML = `
+                    <span class="status-indicator ${connected ? 'status-connected' : 'status-disconnected'}"></span>
+                    ${connected ? 'Connected' : 'Disconnected'}
+                `;
+                status.style.display = 'block';
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            const config = loadConfig();
+            
+            if (data.type === 'alert') {
+                $('#alertBox')
+                    .text(data.text || config.defaultText)
+                    .css('background-color', config.alertColor)
+                    .fadeIn()
+                    .delay(parseInt(config.alertDuration))
+                    .fadeOut();
+            } else if (data.type === 'text') {
+                $('#customText')
+                    .text(data.text || config.defaultText)
+                    .css({
+                        top: config.position === 'top' ? '10%' : 
+                             config.position === 'bottom' ? '90%' : '50%'
+                    });
+            }
+        }
+
+        // Configuration Management
         function generateUserId() {
             return Math.random().toString(36).substring(2, 15);
         }
 
-        // Get URL parameters
         function getUrlParams() {
             const params = new URLSearchParams(window.location.search);
             return {
@@ -121,14 +222,15 @@
                 alertDuration: params.get('alertDuration'),
                 alertColor: params.get('alertColor'),
                 defaultText: params.get('defaultText'),
-                position: params.get('position')
+                position: params.get('position'),
+                wsPort: params.get('wsPort')
             };
         }
 
-        // Save configuration
         function saveConfig() {
             const userId = $('#userId').val();
             const config = {
+                wsPort: $('#wsPort').val(),
                 alertDuration: $('#alertDuration').val(),
                 alertColor: $('#alertColor').val(),
                 defaultText: $('#defaultText').val(),
@@ -140,27 +242,32 @@
             alert('Configuration saved!');
         }
 
-        // Load configuration
-        function loadConfig(userId) {
+        function loadConfig() {
+            const params = getUrlParams();
+            const userId = params.userId;
+            
             // First try URL parameters
-            const urlParams = getUrlParams();
-            if (urlParams.alertDuration || urlParams.alertColor || urlParams.defaultText || urlParams.position) {
+            if (params.alertDuration || params.alertColor || params.defaultText || params.position) {
                 return {
-                    alertDuration: urlParams.alertDuration || '3000',
-                    alertColor: urlParams.alertColor || '#ff0000',
-                    defaultText: urlParams.defaultText || 'Hello Stream!',
-                    position: urlParams.position || 'center'
+                    wsPort: params.wsPort || '8080',
+                    alertDuration: params.alertDuration || '3000',
+                    alertColor: params.alertColor || '#ff0000',
+                    defaultText: params.defaultText || 'Hello Stream!',
+                    position: params.position || 'center'
                 };
             }
 
             // Then try localStorage
-            const stored = localStorage.getItem(`overlayConfig_${userId}`);
-            if (stored) {
-                return JSON.parse(stored);
+            if (userId) {
+                const stored = localStorage.getItem(`overlayConfig_${userId}`);
+                if (stored) {
+                    return JSON.parse(stored);
+                }
             }
 
             // Default config
             return {
+                wsPort: '8080',
                 alertDuration: 3000,
                 alertColor: '#ff0000',
                 defaultText: 'Hello Stream!',
@@ -168,19 +275,17 @@
             };
         }
 
-        // Update configuration URL
         function updateConfigUrl(userId, config) {
             const baseUrl = window.location.href.split('?')[0].split('#')[0];
-            const configUrl = `${baseUrl}?userId=${userId}&alertDuration=${config.alertDuration}&alertColor=${encodeURIComponent(config.alertColor)}&defaultText=${encodeURIComponent(config.defaultText)}&position=${config.position}`;
+            const configUrl = `${baseUrl}?userId=${userId}&wsPort=${config.wsPort}&alertDuration=${config.alertDuration}&alertColor=${encodeURIComponent(config.alertColor)}&defaultText=${encodeURIComponent(config.defaultText)}&position=${config.position}`;
             $('#configUrl').text(configUrl);
             $('#overlayUrl').text(configUrl.replace('#config', ''));
         }
 
-        // Copy URL to clipboard
-        function copyUrl(elementId) {
-            const url = document.getElementById(elementId).textContent;
-            navigator.clipboard.writeText(url).then(() => {
-                alert('URL copied to clipboard!');
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
             });
         }
 
@@ -188,12 +293,14 @@
         $(document).ready(() => {
             const params = getUrlParams();
             const userId = params.userId || generateUserId();
+            const config = loadConfig();
 
             if (isConfig) {
                 // Config page setup
                 document.body.innerHTML = `
                     <div class="config-container">
-                        <h1>Overlay Configuration</h1>
+                        <h1>Overlay Widget Configuration</h1>
+                        
                         <div class="config-section">
                             <h2>User ID</h2>
                             <div class="config-input">
@@ -201,52 +308,88 @@
                                 <input type="text" id="userId" value="${userId}" readonly>
                             </div>
                         </div>
+
+                        <div class="config-section">
+                            <h2>Streamer.bot Settings</h2>
+                            <div class="config-input">
+                                <label>WebSocket Port</label>
+                                <input type="number" id="wsPort" value="${config.wsPort}">
+                            </div>
+                        </div>
+
                         <div class="config-section">
                             <h2>Alert Settings</h2>
                             <div class="config-input">
                                 <label>Alert Duration (ms)</label>
-                                <input type="number" id="alertDuration" value="3000">
+                                <input type="number" id="alertDuration" value="${config.alertDuration}">
                             </div>
                             <div class="config-input">
                                 <label>Alert Color</label>
-                                <input type="color" id="alertColor" value="#ff0000">
+                                <input type="color" id="alertColor" value="${config.alertColor}">
                             </div>
                         </div>
+
                         <div class="config-section">
                             <h2>Text Settings</h2>
                             <div class="config-input">
                                 <label>Default Text</label>
-                                <input type="text" id="defaultText" value="Hello Stream!">
+                                <input type="text" id="defaultText" value="${config.defaultText}">
                             </div>
                             <div class="config-input">
                                 <label>Position</label>
                                 <select id="position">
-                                    <option value="center">Center</option>
-                                    <option value="top">Top</option>
-                                    <option value="bottom">Bottom</option>
+                                    <option value="center" ${config.position === 'center' ? 'selected' : ''}>Center</option>
+                                    <option value="top" ${config.position === 'top' ? 'selected' : ''}>Top</option>
+                                    <option value="bottom" ${config.position === 'bottom' ? 'selected' : ''}>Bottom</option>
                                 </select>
                             </div>
                         </div>
+
                         <button onclick="saveConfig()">Save Configuration</button>
+
                         <div class="config-section">
-                            <h2>Your URLs</h2>
-                            <h3>Configuration Page URL (save this to make changes later):</h3>
-                            <div id="configUrl"></div>
-                            <button onclick="copyUrl('configUrl')">Copy Config URL</button>
+                            <h2>Integration Guide</h2>
                             
-                            <h3>Overlay URL (use this in OBS):</h3>
-                            <div id="overlayUrl"></div>
-                            <button onclick="copyUrl('overlayUrl')">Copy Overlay URL</button>
+                            <h3>1. OBS Setup</h3>
+                            <p>Add a new Browser Source with this URL:</p>
+                            <div id="overlayUrl" class="url-display"></div>
+                            <button onclick="copyToClipboard('overlayUrl')">Copy Overlay URL</button>
+
+                            <h3>2. Configuration URL</h3>
+                            <p>Save this URL to make changes later:</p>
+                            <div id="configUrl" class="url-display"></div>
+                            <button onclick="copyToClipboard('configUrl')">Copy Config URL</button>
+
+                            <h3>3. Streamer.bot Setup</h3>
+                            <p>Create a new action in Streamer.bot with this code:</p>
+                            <div class="code-block">
+using System;
+
+public class CPHInline
+{
+    public bool Execute()
+    {
+        // Replace with your message
+        string message = "Hello World!";
+        
+        // Create the WebSocket message
+        var wsMessage = new
+        {
+            type = "alert", // or "text"
+            text = message
+        };
+        
+        // Send to WebSocket clients
+        CPH.WebsocketBroadcastString(System.Text.Json.JsonSerializer.Serialize(wsMessage));
+        
+        return true;
+    }
+}</div>
+                            <button onclick="copyToClipboard('streamerbot-code')">Copy Code</button>
                         </div>
                     </div>
                 `;
 
-                // Load saved config
-                const config = loadConfig(userId);
-                $('#alertDuration').val(config.alertDuration);
-                $('#alertColor').val(config.alertColor);
-                $('#defaultText').val(config.defaultText);
-                $('#position').val(config.position);
                 updateConfigUrl(userId, config);
 
             } else {
@@ -255,26 +398,19 @@
                     <div class="overlay-container">
                         <div id="alertBox"></div>
                         <div id="customText"></div>
+                        <div id="wsStatus"></div>
                     </div>
                 `;
 
-                // Load configuration and handle actions
-                const config = loadConfig(userId);
+                // Connect to WebSocket
+                connectWebSocket(config.wsPort);
 
-                if (params.action === 'alert') {
-                    $('#alertBox')
-                        .text(params.text || config.defaultText)
-                        .css('background-color', config.alertColor)
-                        .fadeIn()
-                        .delay(parseInt(config.alertDuration))
-                        .fadeOut();
-                } else if (params.action === 'text') {
-                    $('#customText')
-                        .text(params.text || config.defaultText)
-                        .css({
-                            top: config.position === 'top' ? '10%' : 
-                                 config.position === 'bottom' ? '90%' : '50%'
-                        });
+                // Handle URL parameters for direct actions
+                if (params.action) {
+                    handleWebSocketMessage({
+                        type: params.action,
+                        text: params.text
+                    });
                 }
             }
         });
