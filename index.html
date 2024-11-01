@@ -50,10 +50,21 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            margin: 5px;
         }
 
         button:hover {
             background: #7527e0;
+        }
+
+        #configUrl {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            word-break: break-all;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
         }
 
         /* Overlay styles */
@@ -95,44 +106,101 @@
         // Check if this is the config page or overlay
         const isConfig = window.location.hash === '#config';
 
-        // Shared functions
+        // Generate a random user ID if needed
+        function generateUserId() {
+            return Math.random().toString(36).substring(2, 15);
+        }
+
+        // Get URL parameters
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                userId: params.get('userId'),
+                text: params.get('text'),
+                action: params.get('action'),
+                alertDuration: params.get('alertDuration'),
+                alertColor: params.get('alertColor'),
+                defaultText: params.get('defaultText'),
+                position: params.get('position')
+            };
+        }
+
+        // Save configuration
         function saveConfig() {
+            const userId = $('#userId').val();
             const config = {
                 alertDuration: $('#alertDuration').val(),
                 alertColor: $('#alertColor').val(),
                 defaultText: $('#defaultText').val(),
                 position: $('#position').val()
             };
-            localStorage.setItem('overlayConfig', JSON.stringify(config));
+            
+            localStorage.setItem(`overlayConfig_${userId}`, JSON.stringify(config));
+            updateConfigUrl(userId, config);
             alert('Configuration saved!');
         }
 
-        function loadConfig() {
-            const config = JSON.parse(localStorage.getItem('overlayConfig')) || {
+        // Load configuration
+        function loadConfig(userId) {
+            // First try URL parameters
+            const urlParams = getUrlParams();
+            if (urlParams.alertDuration || urlParams.alertColor || urlParams.defaultText || urlParams.position) {
+                return {
+                    alertDuration: urlParams.alertDuration || '3000',
+                    alertColor: urlParams.alertColor || '#ff0000',
+                    defaultText: urlParams.defaultText || 'Hello Stream!',
+                    position: urlParams.position || 'center'
+                };
+            }
+
+            // Then try localStorage
+            const stored = localStorage.getItem(`overlayConfig_${userId}`);
+            if (stored) {
+                return JSON.parse(stored);
+            }
+
+            // Default config
+            return {
                 alertDuration: 3000,
                 alertColor: '#ff0000',
                 defaultText: 'Hello Stream!',
                 position: 'center'
             };
-            return config;
         }
 
-        // Handle URL parameters for Streamer.bot integration
-        function getUrlParams() {
-            const params = new URLSearchParams(window.location.search);
-            return {
-                text: params.get('text'),
-                action: params.get('action')
-            };
+        // Update configuration URL
+        function updateConfigUrl(userId, config) {
+            const baseUrl = window.location.href.split('?')[0].split('#')[0];
+            const configUrl = `${baseUrl}?userId=${userId}&alertDuration=${config.alertDuration}&alertColor=${encodeURIComponent(config.alertColor)}&defaultText=${encodeURIComponent(config.defaultText)}&position=${config.position}`;
+            $('#configUrl').text(configUrl);
+            $('#overlayUrl').text(configUrl.replace('#config', ''));
+        }
+
+        // Copy URL to clipboard
+        function copyUrl(elementId) {
+            const url = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                alert('URL copied to clipboard!');
+            });
         }
 
         // Main execution
         $(document).ready(() => {
+            const params = getUrlParams();
+            const userId = params.userId || generateUserId();
+
             if (isConfig) {
                 // Config page setup
                 document.body.innerHTML = `
                     <div class="config-container">
                         <h1>Overlay Configuration</h1>
+                        <div class="config-section">
+                            <h2>User ID</h2>
+                            <div class="config-input">
+                                <label>Your Unique ID (save this to update your config later)</label>
+                                <input type="text" id="userId" value="${userId}" readonly>
+                            </div>
+                        </div>
                         <div class="config-section">
                             <h2>Alert Settings</h2>
                             <div class="config-input">
@@ -160,15 +228,27 @@
                             </div>
                         </div>
                         <button onclick="saveConfig()">Save Configuration</button>
+                        <div class="config-section">
+                            <h2>Your URLs</h2>
+                            <h3>Configuration Page URL (save this to make changes later):</h3>
+                            <div id="configUrl"></div>
+                            <button onclick="copyUrl('configUrl')">Copy Config URL</button>
+                            
+                            <h3>Overlay URL (use this in OBS):</h3>
+                            <div id="overlayUrl"></div>
+                            <button onclick="copyUrl('overlayUrl')">Copy Overlay URL</button>
+                        </div>
                     </div>
                 `;
 
                 // Load saved config
-                const config = loadConfig();
+                const config = loadConfig(userId);
                 $('#alertDuration').val(config.alertDuration);
                 $('#alertColor').val(config.alertColor);
                 $('#defaultText').val(config.defaultText);
                 $('#position').val(config.position);
+                updateConfigUrl(userId, config);
+
             } else {
                 // Overlay setup
                 document.body.innerHTML = `
@@ -178,9 +258,8 @@
                     </div>
                 `;
 
-                // Handle URL parameters
-                const params = getUrlParams();
-                const config = loadConfig();
+                // Load configuration and handle actions
+                const config = loadConfig(userId);
 
                 if (params.action === 'alert') {
                     $('#alertBox')
