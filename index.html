@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <style>
+        /* Shared styles */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        /* Config page styles */
+        .config-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #fff;
+        }
+
+        .config-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .config-input {
+            margin: 10px 0;
+        }
+
+        .config-input label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .config-input input, .config-input select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #9147ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #7527e0;
+        }
+
+        /* Overlay styles */
+        .overlay-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #alertBox {
+            position: absolute;
+            left: 50%;
+            top: 20%;
+            transform: translateX(-50%);
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        #customText {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // Check if this is the config page or overlay
+        const isConfig = window.location.hash === '#config';
+
+        // Shared functions
+        function saveConfig() {
+            const config = {
+                alertDuration: $('#alertDuration').val(),
+                alertColor: $('#alertColor').val(),
+                defaultText: $('#defaultText').val(),
+                position: $('#position').val()
+            };
+            localStorage.setItem('overlayConfig', JSON.stringify(config));
+            alert('Configuration saved!');
+        }
+
+        function loadConfig() {
+            const config = JSON.parse(localStorage.getItem('overlayConfig')) || {
+                alertDuration: 3000,
+                alertColor: '#ff0000',
+                defaultText: 'Hello Stream!',
+                position: 'center'
+            };
+            return config;
+        }
+
+        // Handle URL parameters for Streamer.bot integration
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                text: params.get('text'),
+                action: params.get('action')
+            };
+        }
+
+        // Main execution
+        $(document).ready(() => {
+            if (isConfig) {
+                // Config page setup
+                document.body.innerHTML = `
+                    <div class="config-container">
+                        <h1>Overlay Configuration</h1>
+                        <div class="config-section">
+                            <h2>Alert Settings</h2>
+                            <div class="config-input">
+                                <label>Alert Duration (ms)</label>
+                                <input type="number" id="alertDuration" value="3000">
+                            </div>
+                            <div class="config-input">
+                                <label>Alert Color</label>
+                                <input type="color" id="alertColor" value="#ff0000">
+                            </div>
+                        </div>
+                        <div class="config-section">
+                            <h2>Text Settings</h2>
+                            <div class="config-input">
+                                <label>Default Text</label>
+                                <input type="text" id="defaultText" value="Hello Stream!">
+                            </div>
+                            <div class="config-input">
+                                <label>Position</label>
+                                <select id="position">
+                                    <option value="center">Center</option>
+                                    <option value="top">Top</option>
+                                    <option value="bottom">Bottom</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="saveConfig()">Save Configuration</button>
+                    </div>
+                `;
+
+                // Load saved config
+                const config = loadConfig();
+                $('#alertDuration').val(config.alertDuration);
+                $('#alertColor').val(config.alertColor);
+                $('#defaultText').val(config.defaultText);
+                $('#position').val(config.position);
+            } else {
+                // Overlay setup
+                document.body.innerHTML = `
+                    <div class="overlay-container">
+                        <div id="alertBox"></div>
+                        <div id="customText"></div>
+                    </div>
+                `;
+
+                // Handle URL parameters
+                const params = getUrlParams();
+                const config = loadConfig();
+
+                if (params.action === 'alert') {
+                    $('#alertBox')
+                        .text(params.text || config.defaultText)
+                        .css('background-color', config.alertColor)
+                        .fadeIn()
+                        .delay(parseInt(config.alertDuration))
+                        .fadeOut();
+                } else if (params.action === 'text') {
+                    $('#customText')
+                        .text(params.text || config.defaultText)
+                        .css({
+                            top: config.position === 'top' ? '10%' : 
+                                 config.position === 'bottom' ? '90%' : '50%'
+                        });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
