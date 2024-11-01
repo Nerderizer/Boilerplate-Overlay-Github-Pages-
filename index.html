@@ -393,14 +393,20 @@ public class CPHInline
                 updateConfigUrl(userId, config);
 
             } else {
-                // Overlay setup
+                                // Overlay setup
                 document.body.innerHTML = `
                     <div class="overlay-container">
                         <div id="alertBox"></div>
-                        <div id="customText"></div>
+                        <div id="customText">${config.defaultText}</div>
                         <div id="wsStatus"></div>
                     </div>
                 `;
+
+                // Set initial text position based on config
+                $('#customText').css({
+                    top: config.position === 'top' ? '10%' : 
+                         config.position === 'bottom' ? '90%' : '50%'
+                });
 
                 // Connect to WebSocket
                 connectWebSocket(config.wsPort);
